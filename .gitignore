@@ -1,0 +1,39 @@
+# ===========================
+# Virtual Environment
+# ===========================
+.venv/
+venv/
+env/
+
+# ===========================
+# IDE / Editor
+# ===========================
+.idea/
+.vscode/
+*.code-workspace
+
+# ===========================
+# Python cache
+# ===========================
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ===========================
+# Chroma vector DB (auto-generated, không cần commit)
+# ===========================
+chroma_db/
+
+# ===========================
+# Scripts phụ (chỉ giữ build_vector_db.py)
+# ===========================
+scripts/nhap/
+
+# ===========================
+# Misc
+# ===========================
+*.log
+*.env
+.env
+.DS_Store
+Thumbs.db
