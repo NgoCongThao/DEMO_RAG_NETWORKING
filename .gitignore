@@ -22,7 +22,7 @@ __pycache__/
 # ===========================
 # Chroma vector DB (auto-generated, không cần commit)
 # ===========================
-chroma_db/
+# chroma_db/
 
 # ===========================
 # Scripts phụ (chỉ giữ build_vector_db.py)
