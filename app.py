@@ -66,6 +66,17 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── RETRIEVAL MODE SELECTOR ──
+    retrieval_mode = st.selectbox(
+        "⚙️ Chế độ Retrieval",
+        [
+            "Hybrid Retrieval",
+            "Vector Search Only",
+            "BM25 Only"
+        ],
+        help="Chọn chiến lược tìm kiếm tài liệu để so sánh độ chính xác."
+    )
+
     # ── INNER TABS in Sidebar ──
     stab1, stab2 = st.tabs(["🛠️ Cài đặt", "📚 Tri thức"])
 
@@ -297,90 +308,110 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
             time.sleep(1)
 
             # =========================
-            # 1. QUERY ANALYSIS & VECTOR SEARCH
+            # STOP WORDS
             # =========================
-            normalized_prompt = prompt.strip().lower()
-            top_k = 5
-        
-
-            vector_results_raw = vector_db.similarity_search_with_score(
-                normalized_prompt,
-                k=top_k
-            )
-            # similarity_search_with_score returns a list of tuples (Document, score)
-            vector_results = [doc for doc, score in vector_results_raw]
-
-            # =========================
-            # 2. BM25 SEARCH
-            # =========================
-            # Lọc hư từ TRƯỚC khi tìm kiếm để tránh nhiễu "Garbage In - Garbage Out"
             stop_words = [
-                "là", "gì", "của", "và", "những", "các",
-                "cho", "được", "trong", "ngoài", "với",
-                "từ", "này", "kia", "đó", "thì", "một",
-                "có", "khi", "về", "so", "sánh", "giữa",
-                "như", "ra", "vào", "hay", "hoặc",
-                "thế", "nào", "tại", "sao", "để", "làm"
+                "là", "gì", "của", "và",
+                "những", "các", "cho",
+                "được", "như", "thế",
+                "nào", "tại", "sao"
             ]
 
-            tokenized_query = clean_text(normalized_prompt).split()
+            tokenized_query = clean_text(prompt).split()
 
-            # 🌟 Lọc từ khóa lõi ngay từ đầu, trước khi đưa vào BM25
-            tu_khoa_loi = [w for w in tokenized_query if w not in stop_words]
+            tu_khoa_loi = [
+                w for w in tokenized_query
+                if w not in stop_words
+            ]
 
-            # Fallback: nếu câu hỏi toàn stop words, dùng toàn bộ query
             if not tu_khoa_loi:
                 tu_khoa_loi = tokenized_query
 
-            scores = bm25.get_scores(tu_khoa_loi)
+            combined = []
 
-            if len(scores) == 0 or max(scores) < 1:
-                top_bm25_idx = []
-            else:
+            # =========================
+            # VECTOR SEARCH ONLY
+            # =========================
+            if retrieval_mode == "Vector Search Only":
+
+                vector_results = vector_db.similarity_search(
+                    prompt,
+                    k=6
+                )
+
+                for doc in vector_results:
+                    combined.append({
+                        "content": doc.page_content,
+                        "metadata": doc.metadata
+                    })
+
+            # =========================
+            # BM25 ONLY
+            # =========================
+            elif retrieval_mode == "BM25 Only":
+
+                scores = bm25.get_scores(tu_khoa_loi)
+
                 top_bm25_idx = sorted(
                     range(len(scores)),
                     key=lambda i: scores[i],
                     reverse=True
-                )[:top_k]
+                )[:6]
+
+                for i in top_bm25_idx:
+                    combined.append({
+                        "content": documents[i],
+                        "metadata": metadatas[i]
+                    })
 
             # =========================
-            # 3. COMBINE RESULTS  (logic unchanged)
+            # HYBRID RETRIEVAL
             # =========================
-            combined = []
+            else:
 
-            for doc in vector_results:
+                # VECTOR
+                vector_results = vector_db.similarity_search(
+                    prompt,
+                    k=6
+                )
 
-                combined.append({
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                })
+                for doc in vector_results:
+                    combined.append({
+                        "content": doc.page_content,
+                        "metadata": doc.metadata
+                    })
 
-            for i in top_bm25_idx:
+                # BM25
+                scores = bm25.get_scores(tu_khoa_loi)
 
-                combined.append({
-                    "content": documents[i],
-                    "metadata": metadatas[i]
-                })
+                top_bm25_idx = sorted(
+                    range(len(scores)),
+                    key=lambda i: scores[i],
+                    reverse=True
+                )[:6]
+
+                for i in top_bm25_idx:
+                    combined.append({
+                        "content": documents[i],
+                        "metadata": metadatas[i]
+                    })
 
             # =========================
-            # 4. REMOVE DUPLICATE CONTENT  (logic unchanged)
+            # REMOVE DUPLICATE
             # =========================
-            seen_content = set()
-
+            seen = set()
             final_results = []
 
             for d in combined:
 
-                if d["content"] not in seen_content:
-
+                if d["content"] not in seen:
                     final_results.append(d)
-
-                    seen_content.add(d["content"])
+                    seen.add(d["content"])
 
             # =========================
             # 5. RERANKING
             # =========================
-            if tu_khoa_loi:
+            if retrieval_mode == "Hybrid Retrieval" and tu_khoa_loi:
                 # Sắp xếp dựa trên:
                 # 1. Số lượng từ khóa độc lập xuất hiện trong document (càng nhiều từ khớp càng tốt)
                 # 2. Tổng số lần xuất hiện của tất cả từ khóa
