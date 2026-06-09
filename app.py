@@ -24,33 +24,29 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(BASE_DIR, "chroma_db")
 
-# Load .env nếu tồn tại (tự điền API key khi khởi động)
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 _env_api_key = os.environ.get("GOOGLE_API_KEY", "")
 
 # =========================
-# CUSTOM CSS INJECTION
+# CUSTOM CSS
 # =========================
 st.markdown("""
 <style>
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 html, body, .stApp { font-family: 'Inter', sans-serif !important; }
-/* Sidebar Logo */
 .sidebar-logo { display: flex; align-items: center; gap: 12px; padding: 10px 0 20px 0; margin-bottom: 20px; }
 .sidebar-logo i { font-size: 24px; color: #10a37f; }
 .sidebar-logo .logo-text { font-size: 18px; font-weight: 600; }
-/* Hide Streamlit elements */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# SIDEBAR LAYOUT
+# SIDEBAR
 # =========================
 with st.sidebar:
-    # Logo / Header
     st.markdown("""
     <div class="sidebar-logo">
         <i class="fa-solid fa-network-wired" style="color: #10a37f; margin-right: 8px;"></i>
@@ -58,7 +54,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # Status indicator
     st.markdown("""
     <div style="margin-bottom:16px;">
         <span class="status-dot"></span>
@@ -66,7 +61,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── RETRIEVAL MODE SELECTOR ──
     retrieval_mode = st.selectbox(
         "⚙️ Chế độ Retrieval",
         [
@@ -77,14 +71,15 @@ with st.sidebar:
         help="Chọn chiến lược tìm kiếm tài liệu để so sánh độ chính xác."
     )
 
-    # ── INNER TABS in Sidebar ──
+    debug_mode = st.toggle("🐞 Debug Mode (Hiển thị context từ chối)", value=False)
+
     stab1, stab2 = st.tabs(["🛠️ Cài đặt", "📚 Tri thức"])
 
     with stab1:
         st.markdown("**🔑 Gemini API Key**")
         api_key = st.text_input(
             "API Key",
-            value=_env_api_key,          # ← tự điền từ .env
+            value=_env_api_key,
             type="password",
             label_visibility="collapsed",
             placeholder="AIza..."
@@ -104,12 +99,11 @@ with st.sidebar:
 
         st.divider()
 
-
         # ── EXPORT CHAT HISTORY ──
         st.markdown("**💾 Lưu lịch sử chat**")
 
         def build_md_export():
-            """Build Markdown string from chat history."""
+            """Tạo chuỗi Markdown từ lịch sử hội thoại."""
             lines = ["# 📋 Lịch sử hội thoại — RAG Networking Tutor\n"]
             lines.append(f"*Xuất lúc: {time.strftime('%Y-%m-%d %H:%M:%S')}*\n")
             lines.append("---\n")
@@ -119,7 +113,7 @@ with st.sidebar:
             return "\n".join(lines)
 
         def build_txt_export():
-            """Build plain-text string from chat history."""
+            """Tạo chuỗi plain-text từ lịch sử hội thoại."""
             lines = ["LỊCH SỬ HỘI THOẠI — RAG Networking Tutor"]
             lines.append(f"Xuất lúc: {time.strftime('%Y-%m-%d %H:%M:%S')}")
             lines.append("=" * 50)
@@ -178,11 +172,10 @@ with st.sidebar:
                 st.rerun()
 
 # =========================
-# LOAD RESOURCES  (logic unchanged)
+# LOAD RESOURCES
 # =========================
 @st.cache_resource
 def load_resources():
-
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
@@ -197,14 +190,13 @@ def load_resources():
     return vector_db, data["documents"], data["metadatas"]
 
 # =========================
-# CLEAN TEXT  (logic unchanged)
+# CLEAN TEXT
 # =========================
 def clean_text(text):
-
     return re.sub(r'[^\w\s/]', '', text.lower())
 
 # =========================
-# INIT DATA  (logic unchanged)
+# BUILD BM25 INDEX
 # =========================
 @st.cache_resource
 def build_bm25(documents):
@@ -212,15 +204,10 @@ def build_bm25(documents):
     return BM25Okapi(tokenized_corpus)
 
 try:
-
     vector_db, documents, metadatas = load_resources()
-
     bm25 = build_bm25(documents)
-
 except Exception as e:
-
     st.error(f"Lỗi tải dữ liệu: {e}")
-
     st.stop()
 
 # =========================
@@ -240,26 +227,37 @@ st.markdown("""
 # CHAT HISTORY
 # =========================
 if "messages" not in st.session_state:
-
     st.session_state.messages = []
 
 for message in st.session_state.messages:
-
     avatar = "user" if message["role"] == "user" else "assistant"
     with st.chat_message(message["role"], avatar=avatar):
-
         st.markdown(message["content"])
-        
+
         if message.get("citations"):
             with st.expander("Xem nguồn trích dẫn từ giáo trình"):
-                for idx, d in enumerate(message["citations"]):
-                    src = d['metadata'].get('source', 'Không rõ')
-                    page = d['metadata'].get('page', '?')
-                    preview = d['content'][:400]
-                    st.success(
-                        f"**📖 [{idx+1}] {src}** — Trang {page}\n\n"
-                        f"{preview}\u2026"
-                    )
+                if "Rất tiếc" in message["content"]:
+                    st.info("Hệ thống đã truy xuất tài liệu nhưng không tìm thấy đoạn văn bản nào có ngữ nghĩa phù hợp với câu hỏi của bạn.")
+                    if debug_mode:
+                        st.divider()
+                        st.markdown("**[DEBUG MODE] Các ngữ cảnh thô bị LLM từ chối:**")
+                        for idx, d in enumerate(message["citations"]):
+                            src = d['metadata'].get('source', 'Không rõ')
+                            page = d['metadata'].get('page', '?')
+                            preview = d['content'][:400]
+                            st.warning(
+                                f"**📖 [{idx+1}] {src}** — Trang {page}\n\n"
+                                f"{preview}\u2026"
+                            )
+                else:
+                    for idx, d in enumerate(message["citations"][:3]):
+                        src = d['metadata'].get('source', 'Không rõ')
+                        page = d['metadata'].get('page', '?')
+                        preview = d['content'][:400]
+                        st.success(
+                            f"**📖 [{idx+1}] {src}** — Trang {page}\n\n"
+                            f"{preview}\u2026"
+                        )
 
 # =========================
 # USER INPUT
@@ -267,29 +265,19 @@ for message in st.session_state.messages:
 if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter để gửi)"):
 
     if not api_key:
-
         st.warning("⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái (Tab 🛠️ Cài đặt).")
-
         st.stop()
 
-    # =========================
-    # USER MESSAGE
-    # =========================
     st.session_state.messages.append({
         "role": "user",
         "content": prompt
     })
 
     with st.chat_message("user", avatar="user"):
-
         st.markdown(prompt)
 
-    # =========================
-    # ASSISTANT
-    # =========================
     with st.chat_message("assistant", avatar="assistant"):
 
-        # Thinking animation placeholder
         thinking_placeholder = st.empty()
         thinking_placeholder.markdown("""
         <div class="thinking-animation">
@@ -307,9 +295,7 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
 
             time.sleep(1)
 
-            # =========================
-            # STOP WORDS
-            # =========================
+            # Loại bỏ stop words trước khi tokenize query
             stop_words = [
                 "là", "gì", "của", "và",
                 "những", "các", "cho",
@@ -336,7 +322,7 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
 
                 vector_results = vector_db.similarity_search(
                     prompt,
-                    k=6
+                    k=3
                 )
 
                 for doc in vector_results:
@@ -356,7 +342,7 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
                     range(len(scores)),
                     key=lambda i: scores[i],
                     reverse=True
-                )[:6]
+                )[:3]
 
                 for i in top_bm25_idx:
                     combined.append({
@@ -369,7 +355,6 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
             # =========================
             else:
 
-                # VECTOR
                 vector_results = vector_db.similarity_search(
                     prompt,
                     k=6
@@ -378,56 +363,134 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
                 for doc in vector_results:
                     combined.append({
                         "content": doc.page_content,
-                        "metadata": doc.metadata
+                        "metadata": doc.metadata,
+                        "source_type": "vector",
+                        "score_bonus": 2
                     })
 
-                # BM25
-                scores = bm25.get_scores(tu_khoa_loi)
+                # Chỉ dùng từ kỹ thuật để tránh nhiễu khi tìm kiếm BM25
+                technical_keywords = [
+                    w for w in tu_khoa_loi
+                    if (
+                        w.isupper()
+                        or "/" in w
+                        or len(w) >= 4
+                    )
+                ]
+                bm25_query = technical_keywords if technical_keywords else tu_khoa_loi
+                scores = bm25.get_scores(bm25_query)
 
                 top_bm25_idx = sorted(
                     range(len(scores)),
                     key=lambda i: scores[i],
                     reverse=True
-                )[:6]
+                )[:4]
 
                 for i in top_bm25_idx:
                     combined.append({
                         "content": documents[i],
-                        "metadata": metadatas[i]
+                        "metadata": metadatas[i],
+                        "source_type": "bm25",
+                        "score_bonus": 0
                     })
 
             # =========================
-            # REMOVE DUPLICATE
+            # LOẠI BỎ TRÙNG LẶP
             # =========================
             seen = set()
             final_results = []
 
             for d in combined:
-
                 if d["content"] not in seen:
                     final_results.append(d)
                     seen.add(d["content"])
 
             # =========================
-            # 5. RERANKING
+            # SMART HYBRID RERANKING
             # =========================
             if retrieval_mode == "Hybrid Retrieval" and tu_khoa_loi:
-                # Sắp xếp dựa trên:
-                # 1. Số lượng từ khóa độc lập xuất hiện trong document (càng nhiều từ khớp càng tốt)
-                # 2. Tổng số lần xuất hiện của tất cả từ khóa
+
+                def keyword_match_score(content, keywords):
+                    """
+                    Tính điểm keyword matching:
+                    - Exact match  : +3
+                    - Partial match: +1
+                    """
+                    content = clean_text(content)
+                    score = 0
+                    for w in keywords:
+                        if w in content:
+                            score += 3
+                        elif any(
+                            w in token or token in w
+                            for token in content.split()
+                        ):
+                            score += 1
+                    return score
+
+                for d in final_results:
+
+                    clean_content = clean_text(d["content"])
+
+                    distinct_match = sum(
+                        1 for w in tu_khoa_loi
+                        if w in clean_content
+                    )
+
+                    exact_match = 0
+                    partial_match = 0
+                    for w in tu_khoa_loi:
+                        if w in clean_content:
+                            exact_match += 1
+                        elif any(
+                            w in token
+                            for token in clean_content.split()
+                        ):
+                            partial_match += 1
+
+                    # Giới hạn mật độ keyword tối đa 8 để tránh overfitting
+                    density = min(
+                        sum(clean_content.count(w) for w in tu_khoa_loi),
+                        8
+                    )
+
+                    source_bonus = 2 if d.get("source_type") == "vector" else 0
+
+                    # Bonus ngữ nghĩa dựa trên từ khoá chuyên ngành mạng
+                    semantic_words = [
+                        "routing", "link-state", "distance-vector",
+                        "định tuyến", "giao thức", "topology",
+                        "ospf", "bgp", "rip", "eigrp",
+                        "subnet", "vlan", "switching", "forwarding",
+                        "bandwidth", "latency", "congestion",
+                        "tcp", "udp", "ip", "mac", "arp",
+                        "firewall", "nat", "dns", "dhcp"
+                    ]
+                    semantic_bonus = sum(
+                        1 for s in semantic_words
+                        if s in clean_content
+                    )
+
+                    rerank_score = (
+                        distinct_match * 6
+                        + exact_match * 4
+                        + partial_match * 1
+                        + density
+                        + source_bonus
+                        + semantic_bonus
+                    )
+
+                    d["rerank_score"] = rerank_score
+
                 final_results.sort(
-                    key=lambda x: (
-                        sum(1 for w in tu_khoa_loi if w in clean_text(x["content"])),
-                        sum(clean_text(x["content"]).count(w) for w in tu_khoa_loi)
-                    ),
+                    key=lambda x: x["rerank_score"],
                     reverse=True
                 )
 
             # =========================
-            # 6. REMOVE DUPLICATE PAGES  (logic unchanged)
+            # LOẠI BỎ TRANG TRÙNG LẶP
             # =========================
             filtered_docs = []
-
             seen_pages = set()
 
             for d in final_results:
@@ -438,18 +501,16 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
                 )
 
                 if page_key not in seen_pages:
-
                     filtered_docs.append(d)
-
                     seen_pages.add(page_key)
 
-                if len(filtered_docs) == 5:
+                if len(filtered_docs) == 6:
                     break
 
             top_docs = filtered_docs
 
             # =========================
-            # 7. REFUSAL CHECK  (logic unchanged)
+            # KIỂM TRA KẾT QUẢ TRUY XUẤT
             # =========================
             if (
                 not top_docs
@@ -469,7 +530,7 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
             )
 
         # =========================
-        # BUILD CONTEXT  (logic unchanged)
+        # XÂY DỰNG CONTEXT
         # =========================
         context = "\n\n====================\n\n".join(
             [
@@ -481,7 +542,7 @@ if prompt := st.chat_input("Nhập câu hỏi về mạng máy tính… (Enter �
         )
 
         # =========================
-        # SYSTEM PROMPT  (logic unchanged)
+        # SYSTEM PROMPT
         # =========================
         system_prompt = f"""
 Bạn là trợ lý AI chuyên ngành Mạng Máy Tính.
@@ -493,8 +554,9 @@ QUY TẮC TRẢ LỜI:
 1. TRƯỜNG HỢP CÓ THÔNG TIN TRONG NGỮ CẢNH: 
 - Luôn trả lời bằng tiếng Việt
 - Trả lời chi tiết, đầy đủ và cặn kẽ, tổng hợp thông tin từ nhiều nguồn được cung cấp. Tránh trả lời quá ngắn gọn.
-- Chỉ sử dụng thông tin có trong NGỮ CẢNH.
-- Không suy đoán hoặc tự bổ sung kiến thức ngoài tài liệu.
+- TUYỆT ĐỐI CHỈ sử dụng thông tin có trong NGỮ CẢNH được cung cấp.
+- KHÔNG tìm kiếm dữ liệu bên ngoài, KHÔNG tự suy diễn, KHÔNG tự bịa ra thông tin (hallucination).
+- Đảm bảo tính chính xác tuyệt đối theo tài liệu, tránh mọi sai lệch về thuật ngữ kỹ thuật.
 - Nếu người dùng yêu cầu "so sánh", hãy trình bày theo từng tiêu chí rõ ràng (ví dụ: dùng bảng hoặc danh sách liệt kê).
 - Trình bày mạch lạc, dễ hiểu, kết hợp các ý chính từ tài liệu một cách toàn diện thay vì chỉ sao chép nguyên văn.
 - Giải thích theo phong cách giảng dạy cho sinh viên CNTT.
@@ -515,19 +577,17 @@ CÂU HỎI:
 """
 
         # =========================
-        # GENERATION — Streaming
+        # SINH CÂU TRẢ LỜI (Streaming)
         # =========================
         try:
 
             llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash-lite",
+                model="gemini-2.5-flash",
                 temperature=0.3
             )
 
-            # Clear thinking animation before streaming starts
             thinking_placeholder.empty()
 
-            # Stream response token by token
             def token_stream():
                 for chunk in llm.stream(system_prompt):
                     yield chunk.content
@@ -546,23 +606,28 @@ CÂU HỎI:
                 )
 
             # =========================
-            # CITATION & DISPLAY LOGIC
+            # HIỂN THỊ TRÍCH DẪN NGUỒN
             # =========================
             if "Rất tiếc" in full_response:
-                # Nếu AI từ chối, chỉ hiện câu từ chối, KHÔNG hiện nguồn trích dẫn
                 with st.expander("Xem nguồn trích dẫn từ giáo trình"):
                     st.info("Hệ thống đã truy xuất tài liệu nhưng không tìm thấy đoạn văn bản nào có ngữ nghĩa phù hợp với câu hỏi của bạn.")
+                    if debug_mode:
+                        st.divider()
+                        st.markdown("**[DEBUG MODE] Các ngữ cảnh thô bị LLM từ chối:**")
+                        for idx, d in enumerate(top_docs):
+                            src  = d['metadata'].get('source', 'Không rõ')
+                            page = d['metadata'].get('page', '?')
+                            preview = d['content'][:400]
+                            st.warning(
+                                f"**📖 [{idx+1}] {src}** — Trang {page}\n\n"
+                                f"{preview}\u2026"
+                            )
             else:
-
-
-                # Nếu AI trả lời bình thường, hiện danh sách trích dẫn dạng card
                 with st.expander("Xem nguồn trích dẫn từ giáo trình"):
-                    for idx, d in enumerate(top_docs):
+                    for idx, d in enumerate(top_docs[:3]):
                         src  = d['metadata'].get('source', 'Không rõ')
                         page = d['metadata'].get('page', '?')
                         preview = d['content'][:400]
-
-                        # Hiện card trích dẫn
                         st.success(
                             f"**📖 [{idx+1}] {src}** — Trang {page}\n\n"
                             f"{preview}\u2026"
@@ -571,7 +636,7 @@ CÂU HỎI:
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": full_response,
-                "citations": [] if "Rất tiếc" in full_response else top_docs
+                "citations": top_docs if "Rất tiếc" in full_response else top_docs[:3]
             })
 
         except Exception as e:
